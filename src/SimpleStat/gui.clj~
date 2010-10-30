@@ -1,0 +1,80 @@
+;(ns SimpleStat.gui)
+
+(import '(javax.swing JFrame JPanel JButton
+		      JComboBox JFileChooser JOptionPane)
+        '(java.awt GridBagLayout GridBagConstraints Insets))
+(use '(clojure.contrib
+       [swing-utils :only (add-action-listener)]))
+
+
+(defmacro set-grid! [constraints field value]
+  `(set! (. ~constraints ~(symbol (name field)))
+         ~(if (keyword? value)
+            `(. java.awt.GridBagConstraints
+                ~(symbol (name value)))
+            value)))
+
+(defmacro set-grid-many! [constraints & body]
+  (cons `do
+	(map
+	 #(concat `(set-grid! ~constraints) %)
+	 (partition 2 body))))
+  
+#_(grid-bag-layout container
+		   (:weightx 0.5 :weighty .6) ;default options
+		   (comp-one :gridx 0, :gridy 0)
+		   (come-two :gridx :RELATIVE, :gridwidth 2)
+		   ;; ... more components & constraints ...
+		   )
+
+
+(defmacro set-properties!
+  [constraints object properties]
+  `(for [[prop# val#] ~properties]
+    (if (= prop# :listener)
+      (add-action-listener ~object val#)
+      (set-grid! ~constraints prop# val#))))
+    
+
+(defmacro grid-bag-layout [container default & comps]
+  (concat
+   `(do (. ~container (setLayout (new GridBagLayout)))) ;use GridBagLayout
+   (for [comp comps]
+     `(binding [c# (new GridBagConstraints)
+	    obj# ~(first comp)]
+	(set-properties! c# obj# ~(apply hash-map default))
+	(set-properties! c# obj# ~(apply hash-map comp))
+	(. ~container (add obj# c#))))
+   (list `(. ~container validate))))
+
+
+(def frame (JFrame. "Test Data!"))
+
+(defn import-data
+  [event]
+  (let [file (.getSelectedFile (doto (JFileChooser.)
+				 (.showOpenDialog frame)))]
+    (if file
+      (JOptionPane/showMessageDialog nil (slurp file)))))
+      
+  
+  
+
+
+(def *import-button* (JButton. "Import"))
+(add-action-listener  *import-button* import-data)
+
+(grid-bag-layout (. frame getContentPane)
+		 [:weightx 0.5]
+		 [*import-button*
+		  :gridx 0 :gridy 0 :gridwidth 2 :anchor :PAGE_START]
+		 [(JComboBox. (into-array
+			       (list "2SampT-Test" "ANOVA")))
+		  :gridx 0, :gridy 1]
+		 [(JButton. "TEST!")
+		  :gridx 1, :gridy 1])
+
+(. frame (pack))
+(. frame (setVisible true))
+		  
+		 

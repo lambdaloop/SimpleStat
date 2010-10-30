@@ -1,0 +1,377 @@
+
+(ns SimpleStat.stats
+  (:use (clojure.contrib def math except error-kit)))
+
+
+(def pi Math/PI)
+(defn square [x] (* x x))
+
+(defn sum [l]
+  "Returns sum of l"
+  (reduce + l))
+
+(defn trapezoid
+  "calculates area under f from a to b using
+trapezoid rule"
+  [f a b]
+  (* (- b a)
+     (/ (+ (f a) (f b))
+	2)))
+     
+
+(defn simpson
+  "calculates area under f from a to b using
+1 quadratic approximation (Simpson's rule)."
+  [f a b]
+  (* (/ (- b a) 6)
+     (+ (f a)
+	(* 4 (f (/ (+ a b) 2)))
+	(f b))))
+
+(defn simpson38
+  "calculates area under f from a to b using simpson's rule"
+  [f a b]
+  (* (/ (- b a) 8)
+     (+ (f a)
+	(* 3 (f (/ (+ (* 2 a) b)
+		   3)))
+	(* 3 (f (/ (+ a (* 2 b))
+		   3)))
+	(f b))))
+
+(defn NINT
+  "calculates the numerical integral of f from a to b
+by finding the area under f at small intervals.
+The area function can be specified (defaults to trapezoid)."
+  ([f a b] (NINT f a b trapezoid))
+  ([f a b area]
+  (let [n 1000
+	h  (/ (- b a) n)]
+    (sum (map #(area f % (+ % h))
+	      (map float (range a b h)))))))
+
+
+(defn mean
+  "Returns mean of l"
+  [l]
+  (/ (sum l) (count l)))
+
+(defn variance
+  "Returns variance of sample l.
+This is calculated using Var(X) = sum((x - mean)^2)/(n-1)"
+  [l]
+  (let [m (mean l)]
+    (/ (sum
+	(for [x l]
+	  (square (- x m))))
+       (- (count l) 1))))
+       
+(defn stddev
+  "Returns sample stddev of l.
+Uses the fact that Stddev(X) = sqrt(Var(X))
+where n=number of items."
+  [l]
+  (sqrt (variance l)))
+
+
+					;variance-pop and stddev-pop are rarely used:
+					;hence the suffix		
+(defn variance-pop 
+  "returns variance of population l."
+  [l]
+  (let [m (mean l)]
+    (/ (sum
+	(for [x l]
+	  (square (- x m))))
+       (count l))))
+
+(defn stddev-pop
+  "returns stddev of population l"
+  [l]
+  (sqrt (variance-pop l)))
+
+(defn z-score
+  "Returns z-score of a number using data in l."
+  [num l]
+  (/ (- num (mean l)) (stddev l)))
+
+(defn z-score-md
+  "Returns z-score of num using mean and stddev."
+  [num mean stddev]
+  (/ (- num mean) stddev))
+
+(defn f-reduce
+  "reduces function f (up to n) using reducer."
+  ([f end reducer] (f-reduce f 0 end reducer))
+  ([f start end reducer]
+     (reduce reducer (map f (range start (+ end 1))))))
+
+(defn f-sum
+  "calculates f(0)+f(1)+...+f(n)."
+  ([f end] (f-sum 0 end))
+  ([f start end]
+     (f-reduce f start end +)))
+
+(defn f-prod
+  "calculates f(0)*f(1)*...*f(n)."
+  ([f end] (f-prod 0 end))
+  ([f start end]
+     (f-reduce f start end *)))
+
+
+(defn-memo !
+  "calculates n!
+-(use only with non-negative ints)"
+  [n]
+  (if (<= n 1)
+    1
+    (* n (! (- n 1)))))
+
+(defn erf
+  "returns an approx. of the error function using taylor series."
+  [x]
+  (letfn [(numer [n] (expt x (+ (* 2 n) 1)))
+	  (denom [n] (* (+ (* 2 n) 1) (! n)))
+	  (sign [n] (if (even? n) 1.0 -1.0))
+	  (f [n] (/ (* (sign n) (numer n)) (denom n)))]
+    (* (/ 2 (sqrt pi)) (f-sum f 0 100))))
+
+
+(let [g 7
+      c [0.9999999999998099
+         676.520368121885
+	 -1259.1392167224028
+	 771.3234287776531
+	 -176.6150291621406
+	 12.507343278686905
+	 -0.13857109526572012
+	 9.984369578019572E-6
+	 1.5056327351493116E-7]]
+
+  (defn gamma
+    "calculates the gamma function using Lanczos approximation"
+    [x]
+    (let [z (- x 1)
+	  A (+ (c 0) (f-sum #(/ (c %) (+ z %))
+			    1 (+ g 1)))]
+	
+      (* (sqrt (* 2 pi))
+	 (expt (+ z g 0.5)
+	       (+ z 0.5))
+	 (Math/exp (- (+ z g 0.5)))
+	 A)))
+    
+  (defn gammaln
+    "calculates ln(gamma(x)) using Lanczos approximation"
+    [x]
+    (let [z (- x 1)
+	  A (+ (c 0) (f-sum #(/ (c %) (+ z %))
+			    1 (+ g 1)))]
+      (+ (* 0.5 (Math/log (* 2 pi)))
+	 (* (Math/log (+ z g 0.5))
+	    (+ z 0.5))
+	 (- (+ z g 0.5))
+	 (Math/log A)))))
+
+
+(defn beta
+  "calculates the complete beta function."
+  [a b]
+  (Math/exp (+ (gammaln a) (gammaln b)
+	       (- (gammaln (+ a b))))))
+
+(defn cont-frac
+  "calculates value of generalized continued fraction, with n convergents.
+As seen here: http://en.wikipedia.org/wiki/Generalized_continued_fraction"
+  ([a b] (cont-frac a b 100))
+  ([a b n]
+  (loop [i n
+	 result 0]
+    (if (< i 1)
+      (+ result (b 0))
+      (recur (- i 1) (/ (a i) (+ result (b i))))))))
+    
+
+(defn beta-regularized
+  "calculates regularized incomplete beta function
+uses formula here: http://functions.wolfram.com/06.21.10.0001.01"
+  [z a b]
+  (if (> z (/ (+ a 1) (+ a b 2)))
+    (- 1 (beta-regularized (- 1 z) b a))
+    (letfn [(r [q]
+	     (if (even? q)
+	       (let [k (/ q 2)]
+		 (/ (* k (- b k) z) ;k(b-k)z/[(a+2k-1)(a+2k)]
+		    (* (+ a (* 2 k) -1)
+		       (+ a (* 2 k)))))
+	       (let [k (/ (- q 1) 2)] 
+		 (/ (* -1 (+ a k) (+ a b k) z) ;-(a+k)(a+b+k)z/[(a+2k)(a+2k+1)]
+		    (* (+ a (* 2 k))
+		       (+ a (* 2 k) 1))))))]
+      (* (/ (* (expt z a)
+	       (expt (- 1 z) b))
+	    (* a (beta a b)))
+	 (/ 1 (cont-frac r (constantly 1) 100))))))
+      
+
+(defn norm-cdf
+  "calculates the area under Normal curve, using erf
+For 1 arg, it is area (-INF, x].
+For 2 arg, it is area [a, b]"
+  [z &{:keys [right start]}]
+  {:pre [(not (and right start))]}
+  (cond	right (- 1 (norm-cdf z :right nil))
+	start (- (norm-cdf z) (norm-cdf start))
+	:else (* 0.5 (+ 1 (erf (/ z (sqrt 2)))))))
+
+
+(defn tcdf
+  "calculates the cumulative distribution function
+for the t distribution with df degrees of freedom.
+ (Finds area to the left of t under t-distribution by default).
+Uses the equation here:
+http://en.wikipedia.org/wiki/Student%27s_t-distribution#Cumulative_distribution_function"
+  [t df &{:keys [right start]}]
+  {:pre [(not (and right start))]}
+  (cond right (- 1 (tcdf t df :right nil))
+	start (- (tcdf t df) (tcdf start df))
+	:else (let [x (/ (+ t (sqrt (+ (square t) df)))
+			 (* 2 (sqrt (+ (square t) df))))]
+		(beta-regularized x (/ df 2) (/ df 2)))))
+
+(defn Fcdf
+  "calculates the cdf for the F distribution
+uses formula here:
+http://en.wikipedia.org/wiki/F_distribution#Characterization"
+  [x d1 d2
+   &{:keys [right start]}]
+  {:pre [(not (and right start))]}
+  (cond right (- 1 (Fcdf x d1 d2))
+	start (- (Fcdf x d1 d2) (Fcdf start d1 d2))
+	:else (beta-regularized (/ (* d1 x) (+ (* d1 x) d2))
+				(/ d1 2)
+				(/ d2 2))))
+
+
+(defn one-sample-t-test
+    "calculates a one-sample t-test.
+default direction is two-tailed.
+returns a map with the t, p-value, and df (degrees of freedom)"
+  [l mu &{direction :direction, :or {direction :<>}}]
+  (let [n (count l)
+	s (stddev l)
+	t (/ (- (mean l) mu)
+	     (/ s (sqrt n)))
+	df (- n 1)
+	p (case direction
+		:< (tcdf t df)			 ;left
+		:> (tcdf t df :right true)	 ;right
+		(+ (tcdf (abs t) df :right true) ;two-tailed
+		   (tcdf (- (abs t)) df)))]
+    (zipmap (list :t :p :df) (list t p df))))
+
+
+(defn two-sample-t-test
+  "calculates a two-sample unpaired t-test.
+default direction is two-tailed.
+returns a map with the t, p-value, and df (degrees of freedom)"
+  [x y &{:keys [direction] :or {direction  :<>}}]
+  (let [n1 (count x)
+	n2 (count y)
+	v1 (/ (variance x) n1)
+	v2 (/ (variance y) n2)
+	t (/ (- (mean x) (mean y))
+	     (sqrt (+ v1 v2)))
+	df (/ (square (+ v1 v2))
+	      (+ (/ (square v1) (- n1 1))
+		 (/ (square v2) (- n2 1))))
+	p (case direction
+		:< (tcdf t df)		   ;left
+		:> (tcdf t df :right true) ;right
+		(+ (tcdf (abs t) df :right true) ;two-tailed
+		   (tcdf (- (abs t)) df)))]
+    (zipmap (list :t :p :df) (map double (list t p df)))))
+
+				    
+(defn one-sample-z-test
+  "calculates a one-sample z-test
+against mean mu and with stddev sigma"
+  [l mu sigma &{:keys [direction] :or {direction  :<>}}]
+  (let [n (count l)
+	z (z-score-md (mean l)
+		      mu
+		      (/ sigma (sqrt n)))
+	p (case direction
+		:< (norm-cdf z)
+		:> (norm-cdf z :right true)
+		(+ (norm-cdf (abs z) :right true)
+		   (norm-cdf (- (abs z)))))]
+    (zipmap (list :z :p) (list z p))))
+
+(defn two-sample-z-test
+  "calculates a two-sample z-test (rarely used)
+with s1 and s2 as population stddevs"
+  [l1 l2 s1 s2
+   &{:keys [direction] :or {direction  :<>}}]
+  (let [n1 (count l1)
+	n2 (count l2)
+	z (z-score-md (- (mean l1) (mean l2))
+		      0
+		      (sqrt (+ (/ (square s1) n1)
+			       (/ (square s2) n2))))
+	p (case direction
+		:< (norm-cdf z)
+		:> (norm-cdf z :right true)
+		(+ (norm-cdf (abs z) :right true)
+		   (norm-cdf (- (abs z)))))]
+    (zipmap (list :z :p) (list z p))))
+
+(def *anova-sample* '((6 8 4 5 3 4)
+		      (8 12 9 11 6 8)
+		      (13 9 11 8 7 12)))
+
+(defn groups-mean
+  [l]
+  (/ (sum (map mean l))
+     (count l)))
+
+(defn SS-between-groups
+  "calculates the Sum of squares between
+groups for ANOVA test. (helper function)"
+  [l]
+  (let [m  (groups-mean l)]
+    (sum (for [x l]
+	   (* (count x)
+	      (square (- (mean x) m)))))))
+
+
+(defn SS-within-groups
+   "calculates the Sum of squares within
+groups for ANOVA test. (helper function)"
+  [l]
+  (sum
+   (for [group l :let [m (mean group)]
+	 score group]
+     (square (- score m)))))
+
+
+(defn ANOVA
+  "performs an ANOVA test on the samples.
+Returns the p-value of the test and F-value,
+ embedded in a map"
+  [& samples]
+  (let [groupnum (count samples)
+	;b-between ;w-within
+	SS-b (SS-between-groups samples) ;sum of squares
+	df-b (- groupnum 1) ;degrees of freedom
+	M-b (/ SS-b df-b) ;mean square value
+	SS-w (SS-within-groups samples)
+	df-w (sum (map #(- (count %) 1) samples)) ;n-1 in each group
+	M-w (/ SS-w df-w)
+	F (/ M-b M-w)
+	p (Fcdf F df-b df-w :right true)]
+    (zipmap (list :p :F) (list p (double F)))))
+
+
+    
+		   
